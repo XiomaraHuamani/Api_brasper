@@ -1,36 +1,55 @@
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.db import models
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.utils.translation import gettext_lazy as _
+from apps.users.managers import UserManager
+from rest_framework_simplejwt.tokens import RefreshToken
 
-class UserManager(BaseUserManager):
-    def create_user(self, email, name, phone, password=None):
-        if not email:
-            raise ValueError('El usuario debe tener un correo electrónico')
-        user = self.model(email=self.normalize_email(email), name=name, phone=phone)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
+#from users.managers import UserManager
+# Create your models here.
 
-    def create_superuser(self, email, name, phone, password=None):
-        user = self.create_user(email, name, phone, password)
-        user.is_admin = True
-        user.save(using=self._db)
-        return user
+AUTH_PROVIDERS ={'email':'email', 'google':'google'}
 
-class User(AbstractBaseUser):
-    name = models.CharField(max_length=255)
-    email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=15)
+class User(AbstractBaseUser, PermissionsMixin):
+    id = models.BigAutoField(primary_key=True, editable=False) 
+    email = models.EmailField(
+        max_length=255, verbose_name=_("Email Address"), unique=True
+    )
+    first_name = models.CharField(max_length=100, verbose_name=_("First Name"))
+    last_name = models.CharField(max_length=100, verbose_name=_("Last Name"))
+    is_staff = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False)
+    is_verified=models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
-    is_admin = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(auto_now_add=True)
+    last_login = models.DateTimeField(auto_now=True)
+    auth_provider=models.CharField(max_length=50, blank=False, null=False, default=AUTH_PROVIDERS.get('email'))
+
+    USERNAME_FIELD = "email"
+
+    REQUIRED_FIELDS = ["first_name", "last_name"]
 
     objects = UserManager()
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['name', 'phone']
+    def tokens(self):    
+        refresh = RefreshToken.for_user(self)
+        return {
+            "refresh":str(refresh),
+            "access":str(refresh.access_token)
+        }
+
 
     def __str__(self):
         return self.email
 
     @property
-    def is_staff(self):
-        return self.is_admin
+    def get_full_name(self):
+        return f"{self.first_name.title()} {self.last_name.title()}"
+
+
+class OneTimePassword(models.Model):
+    user=models.OneToOneField(User, on_delete=models.CASCADE)
+    otp=models.CharField(max_length=6)
+
+
+    def __str__(self):
+        return f"{self.user.first_name} - otp code"
